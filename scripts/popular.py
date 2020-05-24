@@ -10,7 +10,7 @@ def paralelize_recommend(uid):
     return {'user_id': uid, 'top100': [int(iid) for iid in items[:100]]}
 
 
-train = pd.read_csv('data/ustore/raw/history.csv')
+train = pd.read_csv('../data/fstore/raw/history.csv')
 
 i_occurences = train.item_id.value_counts()
 pop_items = i_occurences.index.tolist()
@@ -23,4 +23,4 @@ rec_list = []
 with Pool(NUM_THREADS) as p:
     rec_list = p.map(paralelize_recommend, set(train[train.user_eval_set == 'test'].user_id.values))
 recommended = pd.DataFrame(rec_list)
-recommended.to_csv('data/ustore/predictions/popular.csv', index=False)
+recommended.to_csv('../data/fstore/predictions/popular.csv', index=False)

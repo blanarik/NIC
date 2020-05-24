@@ -7,7 +7,7 @@ from datetime import timedelta
 from multiprocessing import Pool
 
 NUM_THREADS = 8
-RUN_LIMIT_HOURS = 16
+RUN_LIMIT_HOURS = 12
 
 def paralelize_recommend(uid):
     i_list = user_items[uid]
@@ -37,11 +37,11 @@ def paralelize_ndcg(uid):
         idcg += 1/np.log2(2+i)
     return dcg/idcg
 
-train = pd.read_csv('data/ustore/raw/history.csv')
+train = pd.read_csv('../data/fstore/raw/history.csv')
 # set score to 1 for all interactions
 train['aux']=train.apply(lambda x: 1, axis=1)
 
-val_truth = pd.read_csv('data/ustore/raw/future.csv')
+val_truth = pd.read_csv('../data/fstore/raw/future.csv')
 val_truth = val_truth.groupby('user_id')['item_id'].apply(list)
 
 train_sparse = scipy.sparse.csr_matrix((train.aux, (train.item_id, train.user_id)))
@@ -59,49 +59,52 @@ while (time.time() - start) /60 /60 < RUN_LIMIT_HOURS:
     aux_time = time.time()
     
     # hyperparameters
-    agg_strategy = ['mean', 'max'][np.random.randint(0, 2)]
-    metric = ['euclidean', 'cosine'][np.random.randint(0, 2)]
-    n_neighbors = 101 + np.random.randint(0, 100)
-    
-    # for min strategy only 101 neighbors are relevant for TOP100 rec
-    if i < 2:
-        agg_strategy = 'min'
-        n_neighbors = 101
-        metric = ['euclidean', 'cosine'][i]
+    # agg_strategy = None
+    metric = 'cosine'
+    n_neighbors = 80 + 20*i
     
     alg = NearestNeighbors(metric=metric, algorithm='brute', n_neighbors=n_neighbors, n_jobs=NUM_THREADS).fit(train_sparse)
     distances, indices = alg.kneighbors(train_sparse)
     per_item_nn = np.dstack((indices, distances))
     
-    perf_ndcg_at_100 = []
-    rec_list = []
-    
-    print(' >> took ', str(timedelta(seconds=time.time() - aux_time)))
-    print(str(timedelta(seconds=time.time() - start)), ' -- config #', len(performance_list)+1, ' >> evaluation starting...')
-    aux_time = time.time()
-    
-    with Pool(NUM_THREADS) as p:
-        perf_ndcg_at_100 = p.map(paralelize_ndcg, set(train[train.user_eval_set == 'val'].user_id.values))
+    for agg_strategy in ['max', 'mean']:
+        # for min strategy only 101 neighbors are relevant for TOP100 rec
+        if i == 0:
+            agg_strategy = 'min'
+            n_neighbors = 101
         
-    performance_list.append({'performance': scipy.average(perf_ndcg_at_100),
-                             'agg_strategy': agg_strategy,
-                             'metric': metric,
-                             'n_neighbors': n_neighbors
-                            })
-    performance_val_users = pd.DataFrame(performance_list)
-    performance_val_users.to_csv('data/ustore/base_tuning/itemknn.csv', index=False)
-    
-    print(' >> took ', str(timedelta(seconds=time.time() - aux_time)))
-    print(str(timedelta(seconds=time.time() - start)), ' -- config #', len(performance_list), ' >> results saved...')
-    
-    # generate recommendations for test users if this model is best so far
-    # storing models led to Memory Error
-    if scipy.average(perf_ndcg_at_100) > best_so_far:
-        best_so_far = scipy.average(perf_ndcg_at_100)
-        print('New best model found - NDCG@100:', best_so_far)
+        perf_ndcg_at_100 = []
+        rec_list = []
+
+        print(' >> took ', str(timedelta(seconds=time.time() - aux_time)))
+        print(str(timedelta(seconds=time.time() - start)), ' -- config #', len(performance_list)+1, ' >> evaluation starting...')
+        aux_time = time.time()
+
         with Pool(NUM_THREADS) as p:
-            rec_list = p.map(paralelize_recommend, set(train[train.user_eval_set == 'test'].user_id.values))
-        recommended = pd.DataFrame(rec_list)
-        recommended.to_csv('data/ustore/predictions/itemknn.csv', index=False)
+            perf_ndcg_at_100 = p.map(paralelize_ndcg, set(train[train.user_eval_set == 'val'].user_id.values))
+
+        performance_list.append({'performance': scipy.average(perf_ndcg_at_100),
+                                 'agg_strategy': agg_strategy,
+                                 'metric': metric,
+                                 'n_neighbors': n_neighbors
+                                })
+        performance_val_users = pd.DataFrame(performance_list)
+        performance_val_users.to_csv('../data/fstore/base_tuning/itemknn.csv', index=False)
+
+        print(' >> took ', str(timedelta(seconds=time.time() - aux_time)))
+        print(str(timedelta(seconds=time.time() - start)), ' -- config #', len(performance_list), ' >> results saved...')
+
+        # generate recommendations for test users if this model is best so far
+        # storing models led to Memory Error
+        if scipy.average(perf_ndcg_at_100) > best_so_far:
+            best_so_far = scipy.average(perf_ndcg_at_100)
+            print('New best model found - NDCG@100:', best_so_far)
+            with Pool(NUM_THREADS) as p:
+                rec_list = p.map(paralelize_recommend, set(train[train.user_eval_set == 'test'].user_id.values))
+            recommended = pd.DataFrame(rec_list)
+            recommended.to_csv('../data/fstore/predictions/itemknn.csv', index=False)
+            
+        if i == 0:
+            break
         
     i += 1

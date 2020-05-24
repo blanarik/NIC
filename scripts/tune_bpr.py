@@ -7,7 +7,7 @@ from datetime import timedelta
 from multiprocessing import Pool
 
 
-NUM_THREADS = 16
+NUM_THREADS = 8
 RUN_LIMIT_HOURS = 12
 
 def paralelize_ndcg(uid):
@@ -28,11 +28,11 @@ def paralelize_recommend(uid):
     top = alg.recommend(userid=uid, user_items=user_items, N=100, filter_already_liked_items=True)
     return {'user_id': uid, 'top100': [_[0] for _ in top]}
 
-train = pd.read_csv('data/ustore/raw/history.csv')
+train = pd.read_csv('../data/fstore/raw/history.csv')
 # set score to 1 for all interactions
 train['aux']=train.apply(lambda x: 1, axis=1)
 
-val_truth = pd.read_csv('data/ustore/raw/future.csv')
+val_truth = pd.read_csv('../data/fstore/raw/future.csv')
 val_truth = val_truth.groupby('user_id')['item_id'].apply(list)
 
 user_items = scipy.sparse.csr_matrix((train.aux, (train.user_id, train.item_id)))
@@ -74,7 +74,7 @@ while (time.time() - start) /60 /60 < RUN_LIMIT_HOURS:
                              'iterations': iterations
                             })
     performance_val_users = pd.DataFrame(performance_list)
-    performance_val_users.to_csv('data/ustore/base_tuning/bpr.csv', index=False)
+    performance_val_users.to_csv('../data/fstore/base_tuning/bpr.csv', index=False)
     
     print(' >> took ', str(timedelta(seconds=time.time() - aux_time)))
     print(str(timedelta(seconds=time.time() - start)), ' -- config #', len(performance_list)+1, ' >> results saved...')
@@ -87,7 +87,7 @@ while (time.time() - start) /60 /60 < RUN_LIMIT_HOURS:
         with Pool(NUM_THREADS) as p:
             rec_list = p.map(paralelize_recommend, set(train[train.user_eval_set == 'test'].user_id.values))
         recommended = pd.DataFrame(rec_list)
-        recommended.to_csv('data/ustore/predictions/bpr.csv', index=False)
+        recommended.to_csv('../data/fstore/predictions/bpr.csv', index=False)
         print('New best model found - NDCG@100:', best_so_far)
 
 alg = best_model

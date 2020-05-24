@@ -6,8 +6,8 @@ import time
 from datetime import timedelta
 from multiprocessing import Pool
 
-NUM_THREADS = 8
-RUN_LIMIT_HOURS = 12
+NUM_THREADS = 4
+RUN_LIMIT_HOURS = 6
 
 def paralelize_recommend(uid):
     i_list = user_items[uid]
@@ -37,11 +37,11 @@ def paralelize_ndcg(uid):
         idcg += 1/np.log2(2+i)
     return dcg/idcg
 
-train = pd.read_csv('data/ustore/raw/history.csv')
+train = pd.read_csv('../data/fstore/raw/history.csv')
 # set score to 1 for all interactions
 train['aux']=train.apply(lambda x: 1, axis=1)
 
-val_truth = pd.read_csv('data/ustore/raw/future.csv')
+val_truth = pd.read_csv('../data/fstore/raw/future.csv')
 val_truth = val_truth.groupby('user_id')['item_id'].apply(list)
 
 train_sparse = scipy.sparse.csr_matrix((train.aux, (train.user_id, train.item_id)))
@@ -60,7 +60,7 @@ while (time.time() - start) /60 /60 < RUN_LIMIT_HOURS:
     # hyperparameters
     # agg_strategy = ['mean', 'max', 'min'][np.random.randint(0, 3)]
     metric = 'cosine'
-    n_neighbors = 180 + 20*i
+    n_neighbors = 110 + 10*i
 
     
     alg = NearestNeighbors(metric=metric, algorithm='brute', n_neighbors=n_neighbors, n_jobs=NUM_THREADS).fit(train_sparse)
@@ -84,7 +84,7 @@ while (time.time() - start) /60 /60 < RUN_LIMIT_HOURS:
                                  'n_neighbors': n_neighbors
                                 })
         performance_val_users = pd.DataFrame(performance_list)
-        performance_val_users.to_csv('data/ustore/base_tuning/userknn.csv', index=False)
+        performance_val_users.to_csv('../data/fstore/base_tuning/userknn.csv', index=False)
 
         print(' >> took ', str(timedelta(seconds=time.time() - aux_time)))
         print(str(timedelta(seconds=time.time() - start)), ' -- config #', len(performance_list), ' >> results saved...')
@@ -97,6 +97,6 @@ while (time.time() - start) /60 /60 < RUN_LIMIT_HOURS:
             with Pool(NUM_THREADS) as p:
                 rec_list = p.map(paralelize_recommend, set(train[train.user_eval_set == 'test'].user_id.values))
             recommended = pd.DataFrame(rec_list)
-            recommended.to_csv('data/ustore/predictions/userknn.csv', index=False)
+            recommended.to_csv('../data/fstore/predictions/userknn.csv', index=False)
 
     i += 1
